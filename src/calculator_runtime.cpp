@@ -1,4 +1,5 @@
 #include <calculator.h>
+#include <folly/io/IOBuf.h>
 #include <iostream>
 #include <networking.h>
 #include <thread>
@@ -18,16 +19,16 @@ struct CalculatorClient::Impl {
 
   int64_t Add(int64_t a, int64_t b) {
     std::cout << "Client: call Add(" << a << ", " << b << ")" << std::endl;
-    std::vector<uint8_t> request = Add_Request{a, b}.serialize();
-    std::vector<uint8_t> response;
+    folly::IOBuf request = Add_Request{a, b}.serialize();
+    folly::IOBuf response(folly::IOBuf::CREATE, 1024);
     client.sendRequest(request, response);
     return Add_Response::deserialize(response).result;
   }
 
   std::string Concat(const std::string &a, const std::string &b) {
     std::cout << "Client: call Concat(" << a << ", " << b << ")" << std::endl;
-    std::vector<uint8_t> request = Concat_Request{a, b}.serialize();
-    std::vector<uint8_t> response;
+    folly::IOBuf request = Concat_Request{a, b}.serialize();
+    folly::IOBuf response(folly::IOBuf::CREATE, 1024);
     client.sendRequest(request, response);
     return Concat_Response::deserialize(response).result;
   }
@@ -52,8 +53,6 @@ struct CalculatorServer::Impl {
   int port;
   toyrpc::Server server;
 
-  std::atomic<bool> stop_requested_{false};
-
   Impl(CalculatorService &s, int p)
       : service(s), port(p), server("127.0.0.1", port) {
     std::cout << "Server: Init port " << port << std::endl;
@@ -63,13 +62,11 @@ struct CalculatorServer::Impl {
     std::cout << "Server: Serving on port " << port << std::endl;
     std::cout << "Server: Waiting for requests..." << std::endl;
 
-    server.start();
-
-    auto callback = [this](const std::vector<uint8_t> &request,
-                           std::vector<uint8_t> &response) {
-      std::cout << "Server: Received request of size " << request.size()
+    auto callback = [this](const folly::IOBuf &request,
+                           folly::IOBuf &response) {
+      std::cout << "Server: Received request of size " << request.length()
                 << std::endl;
-      uint8_t method_id = request[0];
+      uint8_t method_id = request.data()[0];
       if (method_id == ADD_METHOD_ID) {
         Add_Request add_req = Add_Request::deserialize(request);
         int64_t result = service.Add(add_req.a, add_req.b);
@@ -86,20 +83,17 @@ struct CalculatorServer::Impl {
                   << std::endl;
       } else {
         std::cerr << "Server: Unknown method ID: " << method_id << std::endl;
-        response.push_back(0); // Indicate error
+        response.writableData()[0] = 0; // Indicate error
+        response.append(1);
       }
     };
 
-    while (!stop_requested_.load()) {
-      server.handleRequest(callback);
-    }
-
+    server.start(callback);
     std::cout << "Server: Stopped serving." << std::endl;
   }
 
   void stop() {
     std::cout << "Server: Stop requested." << std::endl;
-    stop_requested_.store(true);
     server.stop();
   }
 };

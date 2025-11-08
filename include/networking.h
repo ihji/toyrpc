@@ -1,19 +1,21 @@
+#include <folly/io/IOBuf.h>
 #include <string>
-#include <vector>
 
 namespace toyrpc {
 using ServerCallback =
-    std::function<void(const std::vector<uint8_t> &, std::vector<uint8_t> &)>;
+    std::function<void(const folly::IOBuf &, folly::IOBuf &)>;
 struct Server {
 private:
   std::string address_;
   int port_;
   int server_socket_;
+  std::atomic<bool> stop_requested_;
+  ServerCallback callback_;
 
 public:
   Server(const std::string &address, int port);
-  void start();
-  void handleRequest(ServerCallback callback);
+  void start(ServerCallback callback);
+  void handleRequest(int client_socket);
   void stop();
 };
 
@@ -27,7 +29,6 @@ public:
   Client(const std::string &address, int port);
   ~Client();
   void connect();
-  void sendRequest(const std::vector<uint8_t> &request,
-                   std::vector<uint8_t> &response);
+  void sendRequest(const folly::IOBuf &request, folly::IOBuf &response);
 };
 } // namespace toyrpc

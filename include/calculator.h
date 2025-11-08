@@ -1,3 +1,4 @@
+#include <folly/io/IOBuf.h>
 #include <memory>
 #include <span>
 #include <stdexcept>
@@ -48,26 +49,26 @@ const uint8_t CONCAT_METHOD_ID = 2;
 struct Add_Request {
   int64_t a;
   int64_t b;
-  std::vector<uint8_t> serialize() const;
-  static Add_Request deserialize(std::span<const uint8_t> data);
+  folly::IOBuf serialize() const;
+  static Add_Request deserialize(const folly::IOBuf &data);
 };
 
 struct Add_Response {
   int64_t result;
-  std::vector<uint8_t> serialize() const;
-  static Add_Response deserialize(std::span<const uint8_t> data);
+  folly::IOBuf serialize() const;
+  static Add_Response deserialize(const folly::IOBuf &data);
 };
 
 struct Concat_Request {
   std::string a;
   std::string b;
-  std::vector<uint8_t> serialize() const;
-  static Concat_Request deserialize(std::span<const uint8_t> data);
+  folly::IOBuf serialize() const;
+  static Concat_Request deserialize(const folly::IOBuf &data);
 };
 
 struct Concat_Response {
   std::string result;
-  std::vector<uint8_t> serialize() const;
-  static Concat_Response deserialize(std::span<const uint8_t> data);
+  folly::IOBuf serialize() const;
+  static Concat_Response deserialize(const folly::IOBuf &data);
 };
 } // namespace toyrpc

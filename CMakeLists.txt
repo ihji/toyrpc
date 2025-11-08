@@ -50,6 +50,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(GoogleTest)
 
+FetchContent_Declare(
+  folly
+  GIT_REPOSITORY https://github.com/facebook/folly.git
+  GIT_TAG    v2025.11.03.00
+)
+FetchContent_MakeAvailable(folly)
+
+target_link_libraries(toy_rpc_runtime PUBLIC folly)
+
 # ======================================================================
 # 3. The Failing Test Executable (P1.1)
 # ======================================================================
