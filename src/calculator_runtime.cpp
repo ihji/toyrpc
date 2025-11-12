@@ -82,7 +82,8 @@ struct CalculatorServer::Impl {
         std::cout << "Server: Processed Concat request. Result: " << result
                   << std::endl;
       } else {
-        std::cerr << "Server: Unknown method ID: " << method_id << std::endl;
+        std::cerr << "Server: Unknown method ID: '" << method_id << "'"
+                  << std::endl;
         response.writableData()[0] = 0; // Indicate error
         response.append(1);
       }

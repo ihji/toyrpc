@@ -3,6 +3,7 @@
 #include <iostream>
 #include <netinet/in.h>
 #include <networking.h>
+#include <sys/endian.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -65,31 +66,58 @@ void Server::start(ServerCallback callback) {
 
 void Server::handleRequest(int client_socket) {
   while (!stop_requested_.load()) {
-    folly::IOBuf request(folly::IOBuf::CREATE, 1024);
-    size_t bytes_received = recv(
-        client_socket, (void *)(request.writableData()), request.capacity(), 0);
+    // first read the length of the request
+    size_t request_length;
+    ssize_t bytes_received =
+        recv(client_socket, &request_length, sizeof(request_length), 0);
     if (bytes_received < 0) {
       close(client_socket);
       throw std::runtime_error("Failed to receive data");
     }
-    std::cout << "Networking Server: received request of size "
-              << bytes_received << std::endl;
     if (bytes_received == 0) {
       close(client_socket);
       return; // Connection closed by client
     }
-    request.append(bytes_received);
+    request_length = be64toh(request_length);
+
+    folly::IOBuf request(folly::IOBuf::CREATE, request_length);
+    while (request_length > 0) {
+      bytes_received =
+          recv(client_socket, request.writableTail(), request_length, 0);
+      if (bytes_received < 0) {
+        close(client_socket);
+        throw std::runtime_error("Failed to receive data");
+      }
+      request_length -= bytes_received;
+      request.append(bytes_received);
+    }
+    std::cout << "Networking Server: received request of size "
+              << request.length() << std::endl;
 
     folly::IOBuf response(folly::IOBuf::CREATE, 1024);
     callback_(request, response);
 
     std::cout << "Networking Server: sending response of size "
               << response.length() << std::endl;
+    // first send the response length
+    size_t response_length = htobe64(response.length());
     ssize_t bytes_sent =
-        send(client_socket, response.data(), response.length(), 0);
+        send(client_socket, &response_length, sizeof(response_length), 0);
     if (bytes_sent < 0) {
       close(client_socket);
       throw std::runtime_error("Failed to send data");
+    }
+    // then send the response data
+    response_length = response.length();
+    while (response_length > 0) {
+      bytes_sent = send(client_socket,
+                        response.data() + (response.length() - response_length),
+                        response_length, 0);
+      if (bytes_sent < 0) {
+        close(client_socket);
+        throw std::runtime_error("Failed to send data");
+      }
+      response_length -= bytes_sent;
     }
   }
 }
@@ -137,18 +165,48 @@ void Client::sendRequest(const folly::IOBuf &request, folly::IOBuf &response) {
   if (sock_ < 0) {
     throw std::runtime_error("Socket is not connected");
   }
-  ssize_t bytes_sent = send(sock_, request.data(), request.length(), 0);
+  size_t request_length = htobe64(request.length());
+  // first send the request length
+  ssize_t bytes_sent = send(sock_, &request_length, sizeof(request_length), 0);
   if (bytes_sent < 0) {
     close(sock_);
     throw std::runtime_error("Failed to send data");
   }
+  // then send the request data
+  request_length = request.length();
+  while (request_length > 0) {
+    bytes_sent =
+        send(sock_, request.data() + (request.length() - request_length),
+             request_length, 0);
+    if (bytes_sent < 0) {
+      close(sock_);
+      throw std::runtime_error("Failed to send data");
+    }
+    request_length -= bytes_sent;
+  }
+
+  // first read the length of the response
+  size_t response_length;
   ssize_t bytes_received =
-      recv(sock_, (void *)response.writableData(), response.capacity(), 0);
+      recv(sock_, &response_length, sizeof(response_length), 0);
   if (bytes_received < 0) {
     close(sock_);
     throw std::runtime_error("Failed to receive data");
   }
-  response.append(bytes_received);
+  response_length = be64toh(response_length);
+
+  // read the response data
+  response.clear();
+  response.reserve(0, response_length);
+  while (response_length > 0) {
+    bytes_received = recv(sock_, response.writableTail(), response_length, 0);
+    if (bytes_received < 0) {
+      close(sock_);
+      throw std::runtime_error("Failed to receive data");
+    }
+    response_length -= bytes_received;
+    response.append(bytes_received);
+  }
   std::cout << "Networking Client: received response of size "
             << response.length() << std::endl;
 }
