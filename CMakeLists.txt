@@ -39,25 +39,18 @@ target_include_directories(toy_rpc_runtime PUBLIC
 
 
 # ======================================================================
-# 2. GoogleTest
-# Fetch GTest and set it up
+# 2. Dependencies
+# Fetch dependencies and set it up
 # ======================================================================
-include(FetchContent)
-FetchContent_Declare(
-  GoogleTest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG    v1.17.0
-)
-FetchContent_MakeAvailable(GoogleTest)
 
-FetchContent_Declare(
-  folly
-  GIT_REPOSITORY https://github.com/facebook/folly.git
-  GIT_TAG    v2025.11.03.00
-)
-FetchContent_MakeAvailable(folly)
+find_package(gtest CONFIG REQUIRED)
+find_package(glog CONFIG REQUIRED)
 
-target_link_libraries(toy_rpc_runtime PUBLIC folly)
+find_package(folly CONFIG REQUIRED)
+find_package(wangle CONFIG REQUIRED)
+
+target_link_libraries(toy_rpc_runtime PUBLIC folly glog)
+
 
 # ======================================================================
 # 3. The Failing Test Executable (P1.1)
@@ -84,7 +77,7 @@ target_link_libraries(rpc_test PRIVATE
 add_executable(server
     src/server_main.cpp # You'll need to create this file
 )
-target_link_libraries(server PRIVATE toy_rpc_runtime)
+target_link_libraries(server PRIVATE toy_rpc_runtime wangle)
 
 # --- Example Client User ---
 add_executable(client
