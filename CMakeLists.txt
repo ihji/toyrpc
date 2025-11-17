@@ -14,6 +14,8 @@ else()
   add_compile_options(-Wall -Wextra -Wpedantic -Wshadow -Wnon-virtual-dtor)
 endif()
 
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+
 
 # ======================================================================
 # 1. The RPC Runtime Library
@@ -45,11 +47,15 @@ target_include_directories(toy_rpc_runtime PUBLIC
 
 find_package(gtest CONFIG REQUIRED)
 find_package(glog CONFIG REQUIRED)
+find_package(gflags CONFIG REQUIRED)
 
+find_package(fizz CONFIG REQUIRED)
+find_package(Sodium REQUIRED)
+find_package(fmt CONFIG REQUIRED)
 find_package(folly CONFIG REQUIRED)
 find_package(wangle CONFIG REQUIRED)
 
-target_link_libraries(toy_rpc_runtime PUBLIC folly glog)
+target_link_libraries(toy_rpc_runtime PUBLIC wangle folly fizz sodium fmt glog gflags)
 
 
 # ======================================================================
@@ -77,7 +83,7 @@ target_link_libraries(rpc_test PRIVATE
 add_executable(server
     src/server_main.cpp # You'll need to create this file
 )
-target_link_libraries(server PRIVATE toy_rpc_runtime wangle)
+target_link_libraries(server PRIVATE toy_rpc_runtime)
 
 # --- Example Client User ---
 add_executable(client

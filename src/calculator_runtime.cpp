@@ -20,17 +20,19 @@ struct CalculatorClient::Impl {
   int64_t Add(int64_t a, int64_t b) {
     std::cout << "Client: call Add(" << a << ", " << b << ")" << std::endl;
     folly::IOBuf request = Add_Request{a, b}.serialize();
-    folly::IOBuf response(folly::IOBuf::CREATE, 1024);
-    client.sendRequest(request, response);
-    return Add_Response::deserialize(response).result;
+    auto response = client.sendRequest(request).get();
+    auto result = Add_Response::deserialize(response).result;
+    std::cout << "Client: Add result: " << result << std::endl;
+    return result;
   }
 
   std::string Concat(const std::string &a, const std::string &b) {
     std::cout << "Client: call Concat(" << a << ", " << b << ")" << std::endl;
     folly::IOBuf request = Concat_Request{a, b}.serialize();
-    folly::IOBuf response(folly::IOBuf::CREATE, 1024);
-    client.sendRequest(request, response);
-    return Concat_Response::deserialize(response).result;
+    auto response = client.sendRequest(request).get();
+    auto result = Concat_Response::deserialize(response).result;
+    std::cout << "Client: Concat result: " << result << std::endl;
+    return result;
   }
 };
 
@@ -51,10 +53,9 @@ std::string CalculatorClient::Concat(const std::string &a,
 struct CalculatorServer::Impl {
   CalculatorService &service;
   int port;
-  toyrpc::Server server;
+  std::unique_ptr<Server> server;
 
-  Impl(CalculatorService &s, int p)
-      : service(s), port(p), server("127.0.0.1", port) {
+  Impl(CalculatorService &s, int p) : service(s), port(p) {
     std::cout << "Server: Init port " << port << std::endl;
   };
 
@@ -89,13 +90,12 @@ struct CalculatorServer::Impl {
       }
     };
 
-    server.start(callback);
-    std::cout << "Server: Stopped serving." << std::endl;
+    server = std::make_unique<Server>(port, callback);
+    server->start();
   }
-
   void stop() {
-    std::cout << "Server: Stop requested." << std::endl;
-    server.stop();
+    std::cout << "Server: Stopping server on port " << port << std::endl;
+    server->stop();
   }
 };
 

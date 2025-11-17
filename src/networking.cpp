@@ -6,208 +6,100 @@
 #include <sys/endian.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <wangle/bootstrap/ClientBootstrap.h>
+#include <wangle/channel/AsyncSocketHandler.h>
+#include <wangle/channel/EventBaseHandler.h>
+#include <wangle/codec/LengthFieldBasedFrameDecoder.h>
+#include <wangle/codec/LengthFieldPrepender.h>
+#include <wangle/service/ServerDispatcher.h>
 
 namespace toyrpc {
-Server::Server(const std::string &address, int port)
-    : address_(address), port_(port), stop_requested_(false) {
-  std::cout << "Networking Server: initialized at " << address_ << ":" << port_
-            << std::endl;
+RpcService::RpcService(ServerCallback callback)
+    : callback_(std::move(callback)) {}
+
+Future<std::unique_ptr<IOBuf>>
+RpcService::operator()(std::unique_ptr<IOBuf> request) {
+  folly::IOBuf response(folly::IOBuf::CREATE, 1024);
+  callback_(*request.get(), response);
+  return std::make_unique<IOBuf>(std::move(response));
 }
 
-void Server::start(ServerCallback callback) {
-  callback_ = callback;
+ServerPipelineFactory::ServerPipelineFactory(ServerCallback callback)
+    : service_{std::make_shared<folly::CPUThreadPoolExecutor>(4),
+               std::make_shared<RpcService>(std::move(callback))} {}
 
-  server_socket_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (server_socket_ < 0) {
-    throw std::runtime_error("Failed to create socket");
-  }
-
-  int opt = 1;
-  if (setsockopt(server_socket_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) <
-      0) {
-    throw std::runtime_error("Failed to set socket options");
-  }
-
-  sockaddr_in server_addr{};
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port_);
-  if (inet_pton(AF_INET, address_.c_str(), &server_addr.sin_addr) <= 0) {
-    throw std::runtime_error("Invalid address");
-  }
-
-  if (bind(server_socket_, (sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    throw std::runtime_error("Failed to bind socket");
-  }
-
-  if (listen(server_socket_, SOMAXCONN) < 0) {
-    throw std::runtime_error("Failed to listen on socket");
-  }
-
-  std::cout << "Networking Server: started at " << address_ << ":" << port_
-            << std::endl;
-  while (!stop_requested_.load()) {
-    sockaddr_in client_addr{};
-    socklen_t client_len = sizeof(client_addr);
-    int client_socket =
-        accept(server_socket_, (sockaddr *)&client_addr, &client_len);
-    if (client_socket < 0) {
-      throw std::runtime_error("Failed to accept connection");
-    }
-    std::thread([this, client_socket]() {
-      try {
-        handleRequest(client_socket);
-      } catch (const std::exception &e) {
-        std::cerr << "Error handling request: " << e.what() << std::endl;
-      }
-      close(client_socket);
-    }).detach();
-  }
+ServerPipeline::Ptr
+ServerPipelineFactory::newPipeline(std::shared_ptr<AsyncTransport> socket) {
+  auto pipeline = ServerPipeline::create();
+  pipeline->addBack(AsyncSocketHandler(socket));
+  pipeline->addBack(EventBaseHandler());
+  pipeline->addBack(LengthFieldBasedFrameDecoder());
+  pipeline->addBack(LengthFieldPrepender());
+  pipeline->addBack(MultiplexServerDispatcher(&service_));
+  pipeline->finalize();
+  return pipeline;
 }
 
-void Server::handleRequest(int client_socket) {
-  while (!stop_requested_.load()) {
-    // first read the length of the request
-    size_t request_length;
-    ssize_t bytes_received =
-        recv(client_socket, &request_length, sizeof(request_length), 0);
-    if (bytes_received < 0) {
-      close(client_socket);
-      throw std::runtime_error("Failed to receive data");
-    }
-    if (bytes_received == 0) {
-      close(client_socket);
-      return; // Connection closed by client
-    }
-    request_length = be64toh(request_length);
+Server::Server(int port, ServerCallback callback) : port_(port), server_() {
+  server_.childPipeline(
+      std::make_shared<ServerPipelineFactory>(std::move(callback)));
+  server_.bind(port);
+  std::cout << "Networking Server: initialized at " << port_ << std::endl;
+}
 
-    folly::IOBuf request(folly::IOBuf::CREATE, request_length);
-    while (request_length > 0) {
-      bytes_received =
-          recv(client_socket, request.writableTail(), request_length, 0);
-      if (bytes_received < 0) {
-        close(client_socket);
-        throw std::runtime_error("Failed to receive data");
-      }
-      request_length -= bytes_received;
-      request.append(bytes_received);
-    }
-    std::cout << "Networking Server: received request of size "
-              << request.length() << std::endl;
-
-    folly::IOBuf response(folly::IOBuf::CREATE, 1024);
-    callback_(request, response);
-
-    std::cout << "Networking Server: sending response of size "
-              << response.length() << std::endl;
-    // first send the response length
-    size_t response_length = htobe64(response.length());
-    ssize_t bytes_sent =
-        send(client_socket, &response_length, sizeof(response_length), 0);
-    if (bytes_sent < 0) {
-      close(client_socket);
-      throw std::runtime_error("Failed to send data");
-    }
-    // then send the response data
-    response_length = response.length();
-    while (response_length > 0) {
-      bytes_sent = send(client_socket,
-                        response.data() + (response.length() - response_length),
-                        response_length, 0);
-      if (bytes_sent < 0) {
-        close(client_socket);
-        throw std::runtime_error("Failed to send data");
-      }
-      response_length -= bytes_sent;
-    }
-  }
+void Server::start() {
+  std::cout << "Networking Server: starting at port " << port_ << std::endl;
+  server_.waitForStop();
 }
 
 void Server::stop() {
-  stop_requested_.store(true);
-  close(server_socket_);
-  std::cout << "Networking Server: stopped at " << address_ << ":" << port_
-            << std::endl;
+  std::cout << "Networking Server: stopping at port " << port_ << std::endl;
+  server_.stop();
+  server_.join();
+}
+
+ClientPipeline::Ptr
+ClientPipelineFactory::newPipeline(std::shared_ptr<AsyncTransport> socket) {
+  auto pipeline = ClientPipeline::create();
+  pipeline->addBack(AsyncSocketHandler(socket));
+  pipeline->addBack(EventBaseHandler());
+  pipeline->addBack(LengthFieldBasedFrameDecoder());
+  pipeline->addBack(LengthFieldPrepender());
+  pipeline->finalize();
+  return pipeline;
 }
 
 Client::Client(const std::string &address, int port)
-    : server_address_(address), server_port_(port) {
+    : server_address_(address), server_port_(port),
+      io_group_(std::make_shared<folly::IOThreadPoolExecutor>(1)),
+      dispatcher_(std::make_shared<PipelinedClientDispatcher<
+                      ClientPipeline, std::unique_ptr<IOBuf>>>()) {
   std::cout << "Networking Client: initialized for " << server_address_ << ":"
+            << server_port_ << std::endl;
+  client_.group(io_group_);
+  client_.pipelineFactory(std::make_shared<ClientPipelineFactory>());
+}
+Client::~Client() { std::cout << "Networking Client: destroyed" << std::endl; }
+
+void Client::connect() {
+  auto pipeline =
+      client_.connect(folly::SocketAddress(server_address_, server_port_))
+          .get();
+  dispatcher_->setPipeline(pipeline);
+  service_ = std::make_unique<ExpiringFilter<std::unique_ptr<IOBuf>>>(
+      dispatcher_, std::chrono::seconds(5));
+  std::cout << "Networking Client: connected to " << server_address_ << ":"
             << server_port_ << std::endl;
 }
 
-Client::~Client() {
-  if (sock_ >= 0) {
-    close(sock_);
-  }
-}
-
-void Client::connect() {
-  sock_ = socket(AF_INET, SOCK_STREAM, 0);
-  if (sock_ < 0) {
-    throw std::runtime_error("Failed to create socket");
-  }
-
-  sockaddr_in server_addr{};
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(server_port_);
-  if (inet_pton(AF_INET, server_address_.c_str(), &server_addr.sin_addr) <= 0) {
-    close(sock_);
-    throw std::runtime_error("Invalid address");
-  }
-
-  if (::connect(sock_, (sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-    close(sock_);
-    throw std::runtime_error("Connection failed");
-  }
-}
-
-void Client::sendRequest(const folly::IOBuf &request, folly::IOBuf &response) {
-  if (sock_ < 0) {
-    throw std::runtime_error("Socket is not connected");
-  }
-  size_t request_length = htobe64(request.length());
-  // first send the request length
-  ssize_t bytes_sent = send(sock_, &request_length, sizeof(request_length), 0);
-  if (bytes_sent < 0) {
-    close(sock_);
-    throw std::runtime_error("Failed to send data");
-  }
-  // then send the request data
-  request_length = request.length();
-  while (request_length > 0) {
-    bytes_sent =
-        send(sock_, request.data() + (request.length() - request_length),
-             request_length, 0);
-    if (bytes_sent < 0) {
-      close(sock_);
-      throw std::runtime_error("Failed to send data");
-    }
-    request_length -= bytes_sent;
-  }
-
-  // first read the length of the response
-  size_t response_length;
-  ssize_t bytes_received =
-      recv(sock_, &response_length, sizeof(response_length), 0);
-  if (bytes_received < 0) {
-    close(sock_);
-    throw std::runtime_error("Failed to receive data");
-  }
-  response_length = be64toh(response_length);
-
-  // read the response data
-  response.clear();
-  response.reserve(0, response_length);
-  while (response_length > 0) {
-    bytes_received = recv(sock_, response.writableTail(), response_length, 0);
-    if (bytes_received < 0) {
-      close(sock_);
-      throw std::runtime_error("Failed to receive data");
-    }
-    response_length -= bytes_received;
-    response.append(bytes_received);
-  }
-  std::cout << "Networking Client: received response of size "
-            << response.length() << std::endl;
+Future<IOBuf> Client::sendRequest(const folly::IOBuf &request) {
+  std::cout << "Networking Client: sending request of size " << request.length()
+            << std::endl;
+  return (*service_)(std::make_unique<IOBuf>(request))
+      .thenValue([](std::unique_ptr<IOBuf> response) {
+        std::cout << "Networking Client: received response of size "
+                  << response->length() << std::endl;
+        return *response;
+      });
 }
 } // namespace toyrpc
