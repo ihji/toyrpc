@@ -25,6 +25,7 @@ add_library(toy_rpc_runtime
     src/calculator_runtime.cpp
     src/calculator_serde.cpp
     src/networking.cpp
+    src/tokenizer.cpp
     # TODO: Add your other files here, e.g.:
     # src/tcp_connection.cpp
     # src/serialization.cpp
@@ -54,21 +55,23 @@ find_package(Sodium REQUIRED)
 find_package(fmt CONFIG REQUIRED)
 find_package(folly CONFIG REQUIRED)
 find_package(wangle CONFIG REQUIRED)
+find_package(mstch CONFIG REQUIRED)
 
-target_link_libraries(toy_rpc_runtime PUBLIC wangle folly fizz sodium fmt glog gflags)
+target_link_libraries(toy_rpc_runtime PUBLIC mstch wangle folly fizz sodium fmt glog gflags)
 
 
 # ======================================================================
-# 3. The Failing Test Executable (P1.1)
+# 3. The Test Executable (P1.1)
 # ======================================================================
-add_executable(rpc_test
+add_executable(test_main
     test/rpc_test.cpp
+    test/tokenizer_test.cpp
 )
 
 # Link our test against:
 # 1. Our RPC runtime (so it can use CalculatorClient/Server)
 # 2. GTest (for the TEST_F and EXPECT_EQ macros)
-target_link_libraries(rpc_test PRIVATE
+target_link_libraries(test_main PRIVATE
     toy_rpc_runtime
     GTest::gtest_main # This links gtest and provides a main()
 )
@@ -81,12 +84,18 @@ target_link_libraries(rpc_test PRIVATE
 
 # --- Example Server User ---
 add_executable(server
-    src/server_main.cpp # You'll need to create this file
+    src/server_main.cpp
 )
 target_link_libraries(server PRIVATE toy_rpc_runtime)
 
 # --- Example Client User ---
 add_executable(client
-    src/client_main.cpp # You'll need to create this file
+    src/client_main.cpp
 )
 target_link_libraries(client PRIVATE toy_rpc_runtime)
+
+# --- Entrypoint ---
+add_executable(main
+    src/main.cpp
+)
+target_link_libraries(main PRIVATE toy_rpc_runtime)
