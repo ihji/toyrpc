@@ -1,3 +1,5 @@
+#pragma once
+
 #include <folly/executors/CPUThreadPoolExecutor.h>
 #include <folly/io/IOBuf.h>
 #include <string>

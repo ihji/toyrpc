@@ -26,6 +26,7 @@ add_library(toy_rpc_runtime
     src/calculator_serde.cpp
     src/networking.cpp
     src/tokenizer.cpp
+    src/parser.cpp
     # TODO: Add your other files here, e.g.:
     # src/tcp_connection.cpp
     # src/serialization.cpp
@@ -66,6 +67,7 @@ target_link_libraries(toy_rpc_runtime PUBLIC mstch wangle folly fizz sodium fmt 
 add_executable(test_main
     test/rpc_test.cpp
     test/tokenizer_test.cpp
+    test/parser_test.cpp
 )
 
 # Link our test against:

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <folly/io/IOBuf.h>
 #include <memory>
 #include <span>
