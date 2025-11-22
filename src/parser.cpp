@@ -1,6 +1,7 @@
 #include <ast.h>
 #include <parser.h>
 
+namespace toyrpc {
 Parser::Parser(const std::vector<Token> &tokens)
     : cur_t_idx_(0), tokens_(tokens) {}
 
@@ -85,3 +86,4 @@ Token Parser::peek() {
   }
   throw std::runtime_error("Unexpected end of tokens");
 }
+} // namespace toyrpc

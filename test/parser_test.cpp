@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <parser.h>
 
+namespace toyrpc {
 TEST(ParserTest, BasicParsing) {
   Tokenizer tokenizer;
   std::string input = R"(
@@ -37,3 +38,4 @@ TEST(ParserTest, BasicParsing) {
   EXPECT_EQ(method2.params[1].name, "b");
   EXPECT_EQ(method2.return_type, Type::STRING);
 }
+} // namespace toyrpc

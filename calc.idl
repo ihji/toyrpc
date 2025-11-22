@@ -1,0 +1,4 @@
+service Calculator {
+    rpc Add(i64 a, i64 b) -> i64;
+    rpc Concat(string a, string b) -> string;
+}

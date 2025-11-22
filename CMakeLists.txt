@@ -27,6 +27,7 @@ add_library(toy_rpc_runtime
     src/networking.cpp
     src/tokenizer.cpp
     src/parser.cpp
+    src/mstch_gen.cpp
     # TODO: Add your other files here, e.g.:
     # src/tcp_connection.cpp
     # src/serialization.cpp

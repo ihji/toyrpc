@@ -1,0 +1,110 @@
+#include "gen-cpp/serde.h" // The header we just generated
+#include <sys/endian.h>
+
+namespace toyrpc {
+{{#methods}}
+// --- {{method_name}} ---
+folly::IOBuf {{method_name}}_Request::serialize() const {
+  folly::IOBuf buf(folly::IOBuf::CREATE, 1024); // TODO: size calc
+  buf.writableData()[0] = {{method_id}};
+  size_t offset = 1;
+
+  {{#params}}
+    {{#is_i64}}
+      uint64_t {{name}}_be = htobe64({{name}});
+      memcpy(buf.writableData() + offset, &{{name}}_be, sizeof({{name}}_be));
+      offset += sizeof({{name}}_be);
+    {{/is_i64}}
+
+    {{#is_string}}
+      // length-prefixed string
+      uint32_t {{name}}_len_be = htobe32({{name}}.size());
+      memcpy(buf.writableData() + offset, &{{name}}_len_be, sizeof({{name}}_len_be));
+      offset += sizeof({{name}}_len_be);
+
+      memcpy(buf.writableData() + offset, {{name}}.data(), {{name}}.size());
+      offset += {{name}}.size();
+    {{/is_string}}
+  {{/params}}
+
+  buf.append(offset);
+  return buf;
+}
+
+{{method_name}}_Request {{method_name}}_Request::deserialize(const folly::IOBuf& data) {
+    {{method_name}}_Request request;
+    size_t offset = 1;
+    {{#params}}
+      {{#is_i64}}
+        if (data.length() < offset + sizeof(request.{{name}})) {
+          throw std::runtime_error("Invalid data size for {{method_name}}_Request");
+        }
+        memcpy(&request.{{name}}, data.data() + offset, sizeof(request.{{name}}));
+        request.{{name}} = be64toh(request.{{name}});
+        offset += sizeof(request.{{name}});
+      {{/is_i64}}
+
+      {{#is_string}}
+        if (data.length() < offset + sizeof(uint32_t)) {
+          throw std::runtime_error("Invalid data size for {{method_name}}_Request");
+        }
+        uint32_t {{name}}_length;
+        memcpy(&{{name}}_length, data.data() + offset, sizeof({{name}}_length));
+        {{name}}_length = be32toh({{name}}_length);
+        offset += sizeof({{name}}_length);
+
+        if (data.length() < offset + {{name}}_length) {
+          throw std::runtime_error("Invalid data size for {{method_name}}_Request");
+        }
+        request.{{name}} = std::string(reinterpret_cast<const char*>(data.data() + offset), {{name}}_length);
+        offset += {{name}}_length;
+      {{/is_string}}
+    {{/params}}
+    return request;
+}
+
+folly::IOBuf {{method_name}}_Response::serialize() const {
+  folly::IOBuf buf(folly::IOBuf::CREATE, 1024); // TODO: size calc
+  {{#return_is_i64}}
+    uint64_t result_be = htobe64(result);
+    memcpy(buf.writableData(), &result_be, sizeof(result_be));
+    buf.append(sizeof(result_be));
+  {{/return_is_i64}}
+
+  {{#return_is_string}}
+    uint32_t result_len_be = htobe32(result.size());
+    memcpy(buf.writableData(), &result_len_be, sizeof(result_len_be));
+    memcpy(buf.writableData() + sizeof(result_len_be), result.data(), result.size());
+    buf.append(sizeof(result_len_be) + result.size());
+  {{/return_is_string}}
+
+  return buf;
+}
+
+{{method_name}}_Response {{method_name}}_Response::deserialize(const folly::IOBuf& data) {
+  {{method_name}}_Response response;
+  {{#return_is_i64}}
+    if (data.length() != sizeof(response.result)) {
+      throw std::runtime_error("Invalid data size for {{method_name}}_Response");
+    }
+    memcpy(&response.result, data.data(), sizeof(response.result));
+    response.result = be64toh(response.result);
+  {{/return_is_i64}}
+
+  {{#return_is_string}}
+    if (data.length() < 4) {
+      throw std::runtime_error("Invalid data size for {{method_name}}_Response");
+    }
+    uint32_t result_length;
+    memcpy(&result_length, data.data(), sizeof(result_length));
+    result_length = be32toh(result_length);
+    if (data.length() != sizeof(result_length) + result_length) {
+      throw std::runtime_error("Invalid data size for {{method_name}}_Response");
+    }
+    response.result = std::string(reinterpret_cast<const char*>(data.data() + sizeof(result_length)), result_length);
+  {{/return_is_string}}
+  return response;
+}
+
+{{/methods}}
+} // namespace toyrpc

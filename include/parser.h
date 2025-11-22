@@ -4,6 +4,7 @@
 #include <tokenizer.h>
 #include <vector>
 
+namespace toyrpc {
 class Parser {
 public:
   Parser(const std::vector<Token> &tokens);
@@ -22,3 +23,4 @@ private:
   Token consume();
   Token peek();
 };
+} // namespace toyrpc

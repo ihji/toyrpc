@@ -1,4 +1,4 @@
-#include <calculator.h>
+#include <calculator_serde.h>
 #include <folly/io/IOBuf.h>
 #include <iostream>
 #include <sys/endian.h>
@@ -9,40 +9,50 @@ folly::IOBuf Add_Request::serialize() const {
   folly::IOBuf buf(folly::IOBuf::CREATE, 17);
   buf.writableData()[0] = ADD_METHOD_ID;
   // Serialize the request fields into the byte array
+  size_t offset = 1;
+
   uint64_t a_be = htobe64(a);
+  memcpy(buf.writableData() + offset, &a_be, sizeof(a_be));
+  offset += sizeof(a_be);
+
   uint64_t b_be = htobe64(b);
-  memcpy(buf.writableData() + 1, &a_be, sizeof(a_be));
-  memcpy(buf.writableData() + 1 + sizeof(a_be), &b_be, sizeof(b_be));
-  buf.append(17);
+  memcpy(buf.writableData() + offset, &b_be, sizeof(b_be));
+  offset += sizeof(b_be);
+
+  buf.append(offset);
   return buf;
 }
 
 Add_Request Add_Request::deserialize(const folly::IOBuf &data) {
-  if (data.length() != 17) {
+  Add_Request request;
+  size_t offset = 1;
+  memcpy(&request.a, data.data() + offset, sizeof(request.a));
+  offset += sizeof(request.a);
+  memcpy(&request.b, data.data() + offset, sizeof(request.b));
+  offset += sizeof(request.b);
+  if (data.length() != offset) {
     throw std::runtime_error("Invalid data size for Add_Request");
   }
-  Add_Request request;
-  memcpy(&request.a, data.data() + 1, sizeof(request.a));
-  memcpy(&request.b, data.data() + 1 + sizeof(request.a), sizeof(request.b));
   request.a = be64toh(request.a);
   request.b = be64toh(request.b);
   return request;
 }
 
 folly::IOBuf Add_Response::serialize() const {
-  folly::IOBuf buf(folly::IOBuf::CREATE, 8);
   // Serialize the response fields into the byte array
   uint64_t result_be = htobe64(result);
+  size_t result_size = sizeof(result_be);
+  folly::IOBuf buf(folly::IOBuf::CREATE, result_size);
   memcpy(buf.writableData(), &result_be, sizeof(result_be));
-  buf.append(8);
+  buf.append(result_size);
   return buf;
 }
 
 Add_Response Add_Response::deserialize(const folly::IOBuf &data) {
-  if (data.length() != 8) {
+  Add_Response response;
+  if (data.length() != sizeof(response.result)) {
     throw std::runtime_error("Invalid data size for Add_Response");
   }
-  Add_Response response;
   memcpy(&response.result, data.data(), sizeof(response.result));
   response.result = be64toh(response.result);
   return response;

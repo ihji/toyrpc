@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+namespace toyrpc {
 enum class Type {
   I64,
   STRING,
@@ -23,3 +24,4 @@ struct Service {
   std::string service_name;
   std::vector<Method> methods;
 };
+} // namespace toyrpc

@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+namespace toyrpc {
 enum class TokenType {
   SERVICE,
   RPC,
@@ -28,3 +29,4 @@ struct Token {
 struct Tokenizer {
   std::vector<Token> tokenize(const std::string &input);
 };
+} // namespace toyrpc

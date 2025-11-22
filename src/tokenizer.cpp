@@ -1,5 +1,6 @@
 #include <tokenizer.h>
 
+namespace toyrpc {
 std::vector<Token> Tokenizer::tokenize(const std::string &input) {
   std::vector<Token> tokens;
   int line = 1;
@@ -67,3 +68,4 @@ std::vector<Token> Tokenizer::tokenize(const std::string &input) {
   tokens.push_back({TokenType::END_OF_FILE, "", line});
   return tokens;
 }
+} // namespace toyrpc

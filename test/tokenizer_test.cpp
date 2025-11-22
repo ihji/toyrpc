@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <tokenizer.h>
 
+namespace toyrpc {
 TEST(TokenizerTest, BasicTokenization) {
   Tokenizer tokenizer;
   std::string input = R"(
@@ -31,3 +32,4 @@ TEST(TokenizerTest, BasicTokenization) {
         << "Token " << i << " type mismatch";
   }
 }
+} // namespace toyrpc
